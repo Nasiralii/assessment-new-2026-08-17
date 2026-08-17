@@ -3,14 +3,12 @@ import { Budget, ChangeRequest, PurchaseAgreement, ReqUser } from './cr.types';
 import { CrStatus, CrAction } from './cr.enums';
 import { assertTransition } from './cr-state-machine';
 import { computeTotals } from './cr-totals';
+import { round2 } from './money.util';
 import { Errors } from './errors';
 
 /**
  * Orchestrates CR actions. `submit`, `sendForApproval`, `reject`, `returnToDraft`, `get`, and `list`
- * are provided. `approve` and `apply` are STUBS for you to implement (see CANDIDATE_BRIEF.md):
- *  - legal transitions only; terminal states immutable,
- *  - apply checks the budget covers a positive delta and updates it,
- *  - every successful action appends an audit entry.
+ * are provided. `approve` and `apply` enforce legal transitions, permissions, budget, and audit.
  */
 export class CrService {
 	constructor(
@@ -84,15 +82,37 @@ export class CrService {
 	}
 
 	approve(user: ReqUser, id: string, at: string): ChangeRequest {
-		// TODO: require an approve policy; legal transition PENDING_APPROVAL -> APPROVED;
-		//       record approval + audit.
-		throw Errors.validation('approve not implemented');
+		const cr = this.getOrThrow(user, id);
+		if (!this.isApprover(user)) throw Errors.forbidden('Cannot approve');
+		if (cr.status === CrStatus.APPROVED) return cr;
+		this.transition(cr, CrStatus.APPROVED, CrAction.APPROVE, user.id, at);
+		cr.approvals = [...cr.approvals, { userId: user.id, action: CrAction.APPROVE, at }];
+		return this.repo.save(cr);
 	}
 
 	apply(user: ReqUser, id: string, at: string): ChangeRequest {
-		// TODO: require an apply policy; require APPROVED; recompute totals; check budget covers a
-		//       positive delta else INSUFFICIENT_BUDGET; update budget; set APPLIED; audit.
-		throw Errors.validation('apply not implemented');
+		const cr = this.getOrThrow(user, id);
+		if (!this.isApplier(user)) throw Errors.forbidden('Cannot apply');
+
+		const agreement = this.agreements.get(cr.agreementId);
+		if (!agreement) throw Errors.notFound('Agreement not found');
+		const budget = this.budgets.get(agreement.budgetId);
+		if (!budget) throw Errors.notFound('Budget not found');
+
+		const totals = computeTotals(agreement, cr);
+		assertTransition(cr.status, CrStatus.APPLIED);
+
+		if (totals.delta > 0 && budget.balance < totals.delta) {
+			throw Errors.insufficientBudget();
+		}
+
+		cr.totals = totals;
+		if (totals.delta !== 0) {
+			budget.booked = round2(budget.booked + totals.delta);
+			budget.balance = round2(budget.balance - totals.delta);
+		}
+		this.transition(cr, CrStatus.APPLIED, CrAction.APPLY, user.id, at);
+		return this.repo.save(cr);
 	}
 
 	get(user: ReqUser, id: string): ChangeRequest {
