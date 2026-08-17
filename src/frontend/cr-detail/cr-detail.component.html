@@ -23,6 +23,7 @@
 		</section>
 
 		<section class="cr-actions">
+			<p *ngIf="submitting" class="cr-actions__pending" role="status">Saving…</p>
 			<p *ngIf="actionError" class="cr-actions__error" role="alert">{{ actionError }}</p>
 
 			<button type="button" class="cr-actions__approve" [disabled]="!canApprove || submitting" (click)="approve()">Approve</button>

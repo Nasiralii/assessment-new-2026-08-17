@@ -2,7 +2,9 @@ import { Component, Input, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { CrApiClient } from '../../integration/cr-api-client';
 import { SessionService } from '../../session/session.service';
-import { ChangeRequest, TimelineEntry } from '../../backend/cr.types';
+import { ChangeRequest, ReqUser, TimelineEntry } from '../../backend/cr.types';
+import { CrStatus } from '../../backend/cr.enums';
+import { canApprovePolicy, canRejectPolicy } from '../permissions';
 import { idle, loading, ViewState } from '../view-state';
 
 /**
@@ -54,24 +56,40 @@ export class CrDetailComponent implements OnInit {
 		this.rejectReason = value;
 	}
 
-	/** Whether the current user may approve the loaded CR. */
+	/** Whether the current user may approve the loaded CR (status and policy). */
 	get canApprove(): boolean {
-		// NOTE: this only looks at status. The UI must also respect the user's permissions.
-		return this.detail?.status === 'PENDING_APPROVAL';
+		return this.detail?.status === CrStatus.PENDING_APPROVAL && canApprovePolicy(this.session.user);
 	}
 
 	get canReject(): boolean {
-		return this.detail?.status === 'PENDING_APPROVAL';
+		return this.detail?.status === CrStatus.PENDING_APPROVAL && canRejectPolicy(this.session.user);
 	}
 
 	async approve(): Promise<void> {
-		// TODO: perform the approve action through the client and reflect the outcome in the view.
-		throw new Error('approve() not implemented');
+		if (!this.canApprove || this.submitting) return;
+		await this.runAction((user, id, at) => this.client.approve(user, id, at));
 	}
 
 	async reject(): Promise<void> {
-		// TODO: require a reason, then perform the reject action through the client and reflect the
-		//       outcome in the view.
-		throw new Error('reject() not implemented');
+		if (!this.canReject || this.submitting) return;
+		const reason = this.rejectReason.trim();
+		if (!reason) {
+			this.actionError = 'A reason is required to reject.';
+			return;
+		}
+		await this.runAction((user, id, at) => this.client.reject(user, id, at, reason));
+	}
+
+	private async runAction(action: (user: ReqUser, id: string, at: string) => Promise<ChangeRequest>): Promise<void> {
+		this.submitting = true;
+		this.actionError = undefined;
+		try {
+			const updated = await action(this.session.user, this.id, new Date().toISOString());
+			this.state = { status: 'loaded', data: updated };
+		} catch (err) {
+			this.actionError = (err as Error).message;
+		} finally {
+			this.submitting = false;
+		}
 	}
 }

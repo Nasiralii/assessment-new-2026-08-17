@@ -7,3 +7,7 @@ export function hasPolicy(user: ReqUser, policy: string): boolean {
 export function canApprovePolicy(user: ReqUser): boolean {
 	return ['cr_a_u', 'cr_a_w', 'cr_a_o'].some((p) => hasPolicy(user, p));
 }
+
+export function canRejectPolicy(user: ReqUser): boolean {
+	return canApprovePolicy(user);
+}
