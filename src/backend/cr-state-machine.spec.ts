@@ -14,6 +14,15 @@ describe('backend state machine', () => {
 		expect(() => assertTransition(CrStatus.DRAFT, CrStatus.APPROVED)).toThrow(/illegal|not allowed/i);
 	});
 
+	it('allows PENDING_APPROVAL -> APPROVED and APPROVED -> APPLIED', () => {
+		expect(() => assertTransition(CrStatus.PENDING_APPROVAL, CrStatus.APPROVED)).not.toThrow();
+		expect(() => assertTransition(CrStatus.APPROVED, CrStatus.APPLIED)).not.toThrow();
+	});
+
+	it('rejects APPROVED -> REJECTED (apply is the only forward move)', () => {
+		expect(() => assertTransition(CrStatus.APPROVED, CrStatus.REJECTED)).toThrow(/illegal|not allowed/i);
+	});
+
 	it('rejects moving out of a terminal state', () => {
 		expect(() => assertTransition(CrStatus.APPLIED, CrStatus.APPROVED)).toThrow();
 	});
