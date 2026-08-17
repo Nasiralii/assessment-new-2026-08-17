@@ -3,6 +3,7 @@ import { ChangeRequest, ReqUser } from '../backend/cr.types';
 import { CrService } from '../backend/cr-service';
 import { CrRepo } from '../backend/cr-repo';
 import { buildSeed } from '../backend/seed';
+import { BusinessError } from '../backend/errors';
 
 /**
  * The API/UI boundary. The Angular UI talks to this async client; the client calls the in-process
@@ -35,10 +36,37 @@ export class CrApiClient {
 				try {
 					resolve(produce());
 				} catch (err) {
-					reject(err);
+					reject(this.toClientError(err));
 				}
 			}, this.latencyMs);
 		});
+	}
+
+	/** Map backend/business errors to a plain Error the template can render. */
+	private toClientError(err: unknown): Error {
+		if (err instanceof BusinessError) {
+			return new Error(this.clientMessage(err));
+		}
+		if (err instanceof Error) return err;
+		return new Error('Something went wrong');
+	}
+
+	private clientMessage(err: BusinessError): string {
+		switch (err.code) {
+			case 'FORBIDDEN':
+				return "You don't have permission to perform this action.";
+			case 'NOT_FOUND':
+				return 'Change request not found.';
+			case 'TERMINAL_STATE':
+				return 'This change request can no longer be changed.';
+			case 'INSUFFICIENT_BUDGET':
+				return 'The budget cannot cover this change.';
+			case 'ILLEGAL_TRANSITION':
+			case 'VALIDATION':
+				return err.message;
+			default:
+				return err.message;
+		}
 	}
 
 	list(user: ReqUser): Promise<ChangeRequest[]> {
